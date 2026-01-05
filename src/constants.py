@@ -18,3 +18,10 @@ class PEOffsets(IntEnum):
     # At offset 0x3C (60 bytes) inside the DOS Header, 
     # there is a 4-byte integer pointing to the PE Header.
     E_LFANEW = 0x3C
+
+class MachineType(IntEnum):
+    """
+    Machine architecture identifiers.
+    """
+    IMAGE_FILE_MACHINE_I386 = 0x014c  # x86 (32-bit)
+    IMAGE_FILE_MACHINE_AMD64 = 0x8664 # x64 (64-bit)
