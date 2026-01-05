@@ -3,16 +3,14 @@ import os
 from src.pe_parser import PEParser
 
 def main():
-    # Let's try to parse the system's Notepad
-    # We use os.path.join for cross-platform compatibility
+    # Target file to analyze
     target_file = os.path.join("C:\\", "Windows", "System32", "notepad.exe")
     
-    print(f"[*] Analyzing file: {target_file}")
-
+    # We don't need to print "Analyzing..." here anymore, 
+    # because the PEParser class handles all output internally.
     try:
         parser = PEParser(target_file)
         parser.parse()
-        print("[SUCCESS] Parsing completed successfully.")
         
     except Exception as e:
         print(f"[ERROR] An error occurred: {e}")
