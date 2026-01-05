@@ -129,27 +129,38 @@ class PEParser:
         print("="*40)
 
     def _parse_section_headers(self, f):
-        """Parses and prints the Section Headers table."""
+        """Parses and prints the Section Headers table with permissions."""
+        from src.utils import convert_section_characteristics # Import helper locally
+
         # Calculate exactly where the Section Table starts
         section_table_start = self.optional_header_start + self.size_of_optional_header
         f.seek(section_table_start)
 
         print("SECTION HEADERS:")
-        print(f"{'Name':<10} {'VirtSize':<10} {'VirtAddr':<10} {'RawSize':<10} {'RawAddr':<10}")
-        print("-" * 60)
+        # Added 'Perms' column header
+        print(f"{'Name':<10} {'VirtSize':<10} {'VirtAddr':<10} {'RawSize':<10} {'RawAddr':<10} {'Perms':<10}")
+        print("-" * 70) # Extended line length
 
         for _ in range(self.num_sections):
             section_data = f.read(40)
             if len(section_data) < 40:
                 break
-                
-            section_info = struct.unpack("<8sIIII", section_data[:24]) 
+            
+            # Struct: Name(8s), VirtSize(I), VirtAddr(I), RawSize(I), RawAddr(I), 
+            #         RelocPtr(I), LineNumPtr(I), NumReloc(H), NumLineNum(H), Characteristics(I)
+            # format: <8sIIIIIIHHI
+            section_info = struct.unpack("<8sIIIIIIHHI", section_data)
+            
             name = section_info[0].decode('utf-8', errors='ignore').strip('\x00')
             virtual_size = section_info[1]
             virtual_addr = section_info[2]
             raw_size = section_info[3]
             raw_addr = section_info[4]
+            characteristics = section_info[9] # This is the last field
 
-            print(f"{name:<10} {hex(virtual_size):<10} {hex(virtual_addr):<10} {hex(raw_size):<10} {hex(raw_addr):<10}")
+            # Use our utility function to convert int to string (e.g. 0x60000020 -> 'R-X')
+            perms = convert_section_characteristics(characteristics)
+
+            print(f"{name:<10} {hex(virtual_size):<10} {hex(virtual_addr):<10} {hex(raw_size):<10} {hex(raw_addr):<10} {perms:<10}")
         
         print("="*40)
