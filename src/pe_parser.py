@@ -31,10 +31,7 @@ class PEParser:
         file_hash = calculate_sha256(self.file_path)
         print(f"[*] SHA-256 Hash: {file_hash}")
         print("-" * 60)
-        
-        with open(self.file_path, "rb") as f:
-            print(f"[*] Analyzing file: {self.file_path}")
-        
+                
         with open(self.file_path, "rb") as f:
             self._parse_dos_header(f)
             self._parse_pe_signature(f)
