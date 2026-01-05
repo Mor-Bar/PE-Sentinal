@@ -23,7 +23,17 @@ class PEParser:
         """
         Main driver method that orchestrates the parsing process.
         """
+        from src.utils import calculate_sha256 # Import locally
+        
         print(f"[*] Analyzing file: {self.file_path}")
+        
+        # --- BONUS: Calculate and Print File Hash ---
+        file_hash = calculate_sha256(self.file_path)
+        print(f"[*] SHA-256 Hash: {file_hash}")
+        print("-" * 60)
+        
+        with open(self.file_path, "rb") as f:
+            print(f"[*] Analyzing file: {self.file_path}")
         
         with open(self.file_path, "rb") as f:
             self._parse_dos_header(f)

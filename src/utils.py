@@ -1,4 +1,17 @@
+import hashlib
 from src.constants import SectionFlags
+
+def calculate_sha256(file_path: str) -> str:
+    """
+    Calculates the SHA-256 hash of a file.
+    Used for identifying the file in threat intelligence databases (e.g. VirusTotal).
+    """
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        # Read the file in 4K chunks to handle large files efficiently
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
 
 def convert_section_characteristics(characteristics: int) -> str:
     """
