@@ -76,3 +76,48 @@ class PEParser:
             print(f"[-] Number of Sections: {num_sections}")
             print(f"[-] Timestamp: {timestamp}")
             print("="*40)
+
+            # --- 5. Parse Optional Header ---
+            # We are now pointing at the start of the Optional Header.
+            # First, read the Magic number (2 bytes) to know format.
+            magic_data = f.read(2)
+            magic = struct.unpack("<H", magic_data)[0]
+
+            from src.constants import OptionalHeaderMagic # Import local
+
+            # Define format based on architecture
+            if magic == OptionalHeaderMagic.PE32_PLUS:
+                magic_name = "PE32+ (64-bit)"
+                # Skip: MajorLinker(1) + MinorLinker(1) + SizeOfCode(4) + SizeOfInitData(4) + SizeOfUnInitData(4) = 14 bytes
+                f.seek(14, 1) # '1' means relative seek from current position
+                
+                # Now at AddressOfEntryPoint. 
+                # Struct: AddressOfEntryPoint(4), BaseOfCode(4), ImageBase(8)
+                opt_data = f.read(16)
+                unpacked_opt = struct.unpack("<IIQ", opt_data)
+                
+                entry_point = unpacked_opt[0]
+                image_base = unpacked_opt[2] # Index 2 because 'Q' (8 bytes) is the 3rd element
+
+            elif magic == OptionalHeaderMagic.PE32:
+                magic_name = "PE32 (32-bit)"
+                # Skip same 14 bytes
+                f.seek(14, 1)
+                
+                # Struct: AddressOfEntryPoint(4), BaseOfCode(4), BaseOfData(4), ImageBase(4)
+                # Note: 32-bit has an extra field 'BaseOfData'
+                opt_data = f.read(16)
+                unpacked_opt = struct.unpack("<IIII", opt_data)
+                
+                entry_point = unpacked_opt[0]
+                image_base = unpacked_opt[3] # Index 3 is ImageBase
+
+            else:
+                raise ValueError(f"Unknown Optional Header Magic: {hex(magic)}")
+
+            print("="*40)
+            print("OPTIONAL HEADER INFO:")
+            print(f"[-] Magic: {hex(magic)} ({magic_name})")
+            print(f"[-] Entry Point: {hex(entry_point)}")
+            print(f"[-] Image Base: {hex(image_base)}")
+            print("="*40)

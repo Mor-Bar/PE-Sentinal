@@ -25,3 +25,11 @@ class MachineType(IntEnum):
     """
     IMAGE_FILE_MACHINE_I386 = 0x014c  # x86 (32-bit)
     IMAGE_FILE_MACHINE_AMD64 = 0x8664 # x64 (64-bit)
+
+class OptionalHeaderMagic(IntEnum):
+    """
+    Magic numbers for the Optional Header.
+    Determines if the PE is PE32 (32-bit) or PE32+ (64-bit).
+    """
+    PE32 = 0x10b      # 32-bit executable
+    PE32_PLUS = 0x20b # 64-bit executable
