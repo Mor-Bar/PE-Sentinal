@@ -140,26 +140,25 @@ class PEParser:
         print("="*40)
 
     def _parse_section_headers(self, f):
-        """Parses and prints the Section Headers table with permissions."""
-        from src.utils import convert_section_characteristics # Import helper locally
+        """Parses and prints the Section Headers table with permissions and Entropy."""
+        from src.utils import convert_section_characteristics 
+        from src.entropy import calculate_entropy # Import logic locally
 
         # Calculate exactly where the Section Table starts
         section_table_start = self.optional_header_start + self.size_of_optional_header
         f.seek(section_table_start)
 
         print("SECTION HEADERS:")
-        # Added 'Perms' column header
-        print(f"{'Name':<10} {'VirtSize':<10} {'VirtAddr':<10} {'RawSize':<10} {'RawAddr':<10} {'Perms':<10}")
-        print("-" * 70) # Extended line length
+        # Added 'Entropy' column header
+        print(f"{'Name':<10} {'VirtSize':<10} {'VirtAddr':<10} {'RawSize':<10} {'RawAddr':<10} {'Perms':<10} {'Entropy':<10}")
+        print("-" * 80) 
 
         for _ in range(self.num_sections):
             section_data = f.read(40)
             if len(section_data) < 40:
                 break
             
-            # Struct: Name(8s), VirtSize(I), VirtAddr(I), RawSize(I), RawAddr(I), 
-            #         RelocPtr(I), LineNumPtr(I), NumReloc(H), NumLineNum(H), Characteristics(I)
-            # format: <8sIIIIIIHHI
+            # Unpack fields
             section_info = struct.unpack("<8sIIIIIIHHI", section_data)
             
             name = section_info[0].decode('utf-8', errors='ignore').strip('\x00')
@@ -167,9 +166,9 @@ class PEParser:
             virtual_addr = section_info[2]
             raw_size = section_info[3]
             raw_addr = section_info[4]
-            characteristics = section_info[9] # This is the last field
+            characteristics = section_info[9]
 
-            # Store section info for later RVA conversions
+            # Store section info for RVA conversions
             self.sections.append({
                 'Name': name,
                 'VirtualAddr': virtual_addr,
@@ -177,13 +176,28 @@ class PEParser:
                 'RawAddr': raw_addr
             })
 
-            # Use our utility function to convert int to string (e.g. 0x60000020 -> 'R-X')
             perms = convert_section_characteristics(characteristics)
 
-            print(f"{name:<10} {hex(virtual_size):<10} {hex(virtual_addr):<10} {hex(raw_size):<10} {hex(raw_addr):<10} {perms:<10}")
+            # --- ENTROPY CALCULATION ---
+            # We need to read the actual raw data of the section from the file
+            entropy_val = 0.0
+            if raw_size > 0 and raw_addr > 0:
+                current_pos = f.tell()  # Save header position
+                
+                f.seek(raw_addr)        # Jump to section content
+                data = f.read(raw_size) # Read the content
+                entropy_val = calculate_entropy(data) # Calculate math
+                
+                f.seek(current_pos)     # Go back to headers loop
+            
+            # Format entropy nicely (e.g., 6.45)
+            entropy_str = f"{entropy_val:.2f}"
+
+            # Print row
+            print(f"{name:<10} {hex(virtual_size):<10} {hex(virtual_addr):<10} {hex(raw_size):<10} {hex(raw_addr):<10} {perms:<10} {entropy_str:<10}")
         
         print("="*40)
-
+        
     def _parse_import_directory(self, f):
         """
         Locates and parses the Import Directory to list imported DLLs AND their functions.
