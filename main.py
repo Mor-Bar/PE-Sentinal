@@ -1,34 +1,49 @@
 import sys
 import argparse
+import json
 from src.pe_parser import PEParser
 
 def main():
-    # 1. Initialize the Argument Parser
     parser = argparse.ArgumentParser(
         description="PE-Sentinel: A professional static analysis tool for Windows PE files.",
-        epilog="Example: python main.py C:\\Windows\\System32\\notepad.exe"
+        epilog="Example: python main.py C:\\Windows\\System32\\notepad.exe --json"
     )
 
-    # 2. Define the arguments
     parser.add_argument(
         "file_path",
         help="The absolute or relative path to the target PE file (exe/dll)."
     )
 
-    # 3. Parse the arguments from command line
+    # New Flag: JSON Output
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the analysis results in JSON format (ideal for automation)."
+    )
+
     args = parser.parse_args()
 
-    # 4. Run the tool logic
     try:
-        # We access the argument using the name we gave it above (args.file_path)
-        pe_tool = PEParser(args.file_path)
+        # We pass the 'quiet' flag based on whether the user asked for JSON
+        # If --json is True, we want the parser to be quiet (no text output)
+        pe_tool = PEParser(args.file_path, quiet=args.json)
         pe_tool.parse()
+
+        # If JSON was requested, we pull the data and print it cleanly
+        if args.json:
+            print(json.dumps(pe_tool.pe_data, indent=4))
         
     except FileNotFoundError as e:
-        print(f"[ERROR] File Check Failed: {e}")
+        if args.json:
+            print(json.dumps({"error": str(e)}))
+        else:
+            print(f"[ERROR] File Check Failed: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"[CRITICAL ERROR] An unexpected error occurred: {e}")
+        if args.json:
+            print(json.dumps({"error": str(e)}))
+        else:
+            print(f"[CRITICAL ERROR] An unexpected error occurred: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
