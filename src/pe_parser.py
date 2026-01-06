@@ -18,6 +18,9 @@ class PEParser:
         self.num_sections = 0
         self.size_of_optional_header = 0
         self.optional_header_start = 0
+        # New: Store section data for RVA calculations
+        self.sections = []
+        self.magic = 0
 
     def parse(self):
         """
@@ -38,6 +41,7 @@ class PEParser:
             self._parse_file_header(f)
             self._parse_optional_header(f)
             self._parse_section_headers(f)
+            self._parse_import_directory(f)
             
         print("[SUCCESS] Parsing completed successfully.")
 
@@ -104,13 +108,13 @@ class PEParser:
         self.optional_header_start = f.tell()
         
         magic_data = f.read(2)
-        magic = struct.unpack("<H", magic_data)[0]
+        self.magic = struct.unpack("<H", magic_data)[0]
 
         entry_point = 0
         image_base = 0
         magic_name = "Unknown"
 
-        if magic == OptionalHeaderMagic.PE32_PLUS:
+        if self.magic == OptionalHeaderMagic.PE32_PLUS:
             magic_name = "PE32+ (64-bit)"
             f.seek(14, 1) # Skip to EntryPoint
             opt_data = f.read(16)
@@ -118,7 +122,7 @@ class PEParser:
             entry_point = unpacked_opt[0]
             image_base = unpacked_opt[2]
 
-        elif magic == OptionalHeaderMagic.PE32:
+        elif self.magic == OptionalHeaderMagic.PE32:
             magic_name = "PE32 (32-bit)"
             f.seek(14, 1)
             opt_data = f.read(16)
@@ -127,10 +131,10 @@ class PEParser:
             image_base = unpacked_opt[3]
 
         else:
-            raise ValueError(f"Unknown Optional Header Magic: {hex(magic)}")
+            raise ValueError(f"Unknown Optional Header Magic: {hex(self.magic)}")
 
         print("OPTIONAL HEADER INFO:")
-        print(f"[-] Magic: {hex(magic)} ({magic_name})")
+        print(f"[-] Magic: {hex(self.magic)} ({magic_name})")
         print(f"[-] Entry Point: {hex(entry_point)}")
         print(f"[-] Image Base: {hex(image_base)}")
         print("="*40)
@@ -165,9 +169,139 @@ class PEParser:
             raw_addr = section_info[4]
             characteristics = section_info[9] # This is the last field
 
+            # Store section info for later RVA conversions
+            self.sections.append({
+                'Name': name,
+                'VirtualAddr': virtual_addr,
+                'VirtualSize': virtual_size,
+                'RawAddr': raw_addr
+            })
+
             # Use our utility function to convert int to string (e.g. 0x60000020 -> 'R-X')
             perms = convert_section_characteristics(characteristics)
 
             print(f"{name:<10} {hex(virtual_size):<10} {hex(virtual_addr):<10} {hex(raw_size):<10} {hex(raw_addr):<10} {perms:<10}")
         
+        print("="*40)
+
+    def _parse_import_directory(self, f):
+        """
+        Locates and parses the Import Directory to list imported DLLs AND their functions.
+        """
+        if self.magic == OptionalHeaderMagic.PE32_PLUS:
+            data_dir_offset = 112
+            thunk_size = 8      # 64-bit pointers
+            thunk_format = "<Q" # Unsigned Long Long
+        elif self.magic == OptionalHeaderMagic.PE32:
+            data_dir_offset = 96
+            thunk_size = 4      # 32-bit pointers
+            thunk_format = "<I" # Unsigned Int
+        else:
+            return
+
+        import_entry_pos = self.optional_header_start + data_dir_offset + 8 
+        f.seek(import_entry_pos)
+
+        entry_data = f.read(8)
+        import_rva, import_size = struct.unpack("<II", entry_data)
+
+        print("="*40)
+        print("IMPORT DIRECTORY info:")
+        print(f"[-] Import Table RVA: {hex(import_rva)}")
+        print(f"[-] Import Table Size: {hex(import_size)}")
+
+        if import_rva > 0:
+            from src.utils import rva_to_offset
+            
+            table_offset = rva_to_offset(import_rva, self.sections)
+            print(f"[-] File Offset: {hex(table_offset)}")
+            print("-" * 60)
+            print("IMPORTED FUNCTIONS:")
+            
+            # Jump to the Import Table
+            f.seek(table_offset)
+            
+            while True:
+                # Read IMAGE_IMPORT_DESCRIPTOR (20 bytes)
+                descriptor_data = f.read(20)
+                if len(descriptor_data) < 20 or descriptor_data == b'\x00'*20:
+                    break 
+                
+                # Struct: OriginalFirstThunk(0), TimeDateStamp(1), ForwarderChain(2), Name_RVA(3), FirstThunk(4)
+                descriptor = struct.unpack("<IIIII", descriptor_data)
+                original_first_thunk = descriptor[0]
+                name_rva = descriptor[3]
+                
+                current_pos = f.tell()
+                
+                # --- 1. Get DLL Name ---
+                name_offset = rva_to_offset(name_rva, self.sections)
+                dll_name = "Unknown"
+                if name_offset > 0:
+                    f.seek(name_offset)
+                    dll_name_bytes = b""
+                    while True:
+                        char = f.read(1)
+                        if char == b'\x00': break
+                        dll_name_bytes += char
+                    dll_name = dll_name_bytes.decode('utf-8', errors='ignore')
+
+                print(f"\n[+] {dll_name}")
+
+                # --- 2. Get Functions (Thunk Table) ---
+                if original_first_thunk > 0:
+                    thunk_offset = rva_to_offset(original_first_thunk, self.sections)
+                    if thunk_offset > 0:
+                        f.seek(thunk_offset)
+                        
+                        while True:
+                            thunk_data = f.read(thunk_size)
+                            if len(thunk_data) < thunk_size: break
+                            
+                            thunk_val = struct.unpack(thunk_format, thunk_data)[0]
+                            if thunk_val == 0: break # End of Thunk Table
+                            
+                            # Check if Import by Ordinal (High bit set)
+                            # In 64-bit, high bit is 0x8000000000000000
+                            # In 32-bit, high bit is 0x80000000
+                            is_ordinal = False
+                            if thunk_size == 8:
+                                is_ordinal = (thunk_val & 0x8000000000000000) != 0
+                            else:
+                                is_ordinal = (thunk_val & 0x80000000) != 0
+
+                            if is_ordinal:
+                                print(f"    - [Ordinal Import: {thunk_val & 0xFFFF}]")
+                            else:
+                                # Import by Name: Value is RVA to IMAGE_IMPORT_BY_NAME
+                                # Mask out high bits just in case (though usually 0 for name imports)
+                                name_rva_ptr = thunk_val & 0x7FFFFFFF 
+                                name_ptr_offset = rva_to_offset(name_rva_ptr, self.sections)
+                                
+                                if name_ptr_offset > 0:
+                                    # Save position inside thunk table
+                                    temp_pos = f.tell() 
+                                    
+                                    # Jump to name structure
+                                    f.seek(name_ptr_offset)
+                                    # Skip 2 bytes (Hint)
+                                    f.read(2)
+                                    
+                                    # Read Function Name
+                                    func_bytes = b""
+                                    while True:
+                                        char = f.read(1)
+                                        if char == b'\x00': break
+                                        func_bytes += char
+                                    
+                                    print(f"    - {func_bytes.decode('utf-8', errors='ignore')}")
+                                    
+                                    # Return to thunk table
+                                    f.seek(temp_pos)
+
+                # Return to descriptor loop
+                f.seek(current_pos)
+                
+        else:
+            print("[-] No Imports found.")
         print("="*40)

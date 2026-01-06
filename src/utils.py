@@ -13,6 +13,39 @@ def calculate_sha256(file_path: str) -> str:
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
+def rva_to_offset(rva: int, sections: list) -> int:
+    """
+    Converts a Relative Virtual Address (RVA) to a raw file offset.
+    
+    This is critical because data locations in the PE header are defined 
+    relative to how they look in memory (Virtual), which is different 
+    from how they are stored on disk (Raw).
+    
+    Args:
+        rva (int): The relative virtual address to convert.
+        sections (list): A list of dictionaries containing section info.
+                         Each dict must have 'VirtualAddr', 'VirtualSize', and 'RawAddr'.
+    
+    Returns:
+        int: The calculated raw file offset, or 0 if parsing fails.
+    """
+    for section in sections:
+        v_addr = section['VirtualAddr']
+        v_size = section['VirtualSize']
+        raw_addr = section['RawAddr']
+        
+        # Check if the RVA is inside this section
+        if v_addr <= rva < (v_addr + v_size):
+            # Calculate the delta (offset inside the section)
+            delta = rva - v_addr
+            return raw_addr + delta
+            
+    # If RVA is not in any section (e.g., inside headers), usually header RVA = Offset
+    if rva < 4096: 
+        return rva
+        
+    return 0
+
 def convert_section_characteristics(characteristics: int) -> str:
     """
     Decodes the characteristics flags of a section into a human-readable string.
